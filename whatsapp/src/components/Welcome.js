@@ -1,4 +1,4 @@
-import React from 'react'
+import React,{useEffect} from 'react'
 import logo from "../Images/whatsapp-logo.png";
 import {motion} from "framer-motion";
 import { useNavigate } from 'react-router-dom';
@@ -7,11 +7,13 @@ const Welcome = () => {
 
   //if user not authenticated then go to login page
   const userData = JSON.parse(localStorage.getItem("userData"));
-  const nav = useNavigate();
-  if(!userData){
-    console.log("User not Authenticated");
-    nav("/")
-  }
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!userData) {
+      console.log('User not Authenticated');
+      navigate('/');
+    }
+  }, [userData, navigate]);
 
  
   return (

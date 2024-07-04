@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { IconButton } from "@mui/material";
+import { IconButton, Tooltip } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import MessageSelf from "./MessageSelf";
 import MessageOthers from "./MessageOthers";
@@ -12,26 +12,25 @@ import io from "socket.io-client";
 
 const ENDPOINT = "http://localhost:9000";
 
-var socket,chat;
+var socket;
 
 function ChatArea() {
-  
- 
-  const [messageContent, setMessageContent] = useState([]);
+  const [messageContent, setMessageContent] = useState("");
+  const [isTyping, setIsTyping] = useState(false); // Track if there's content in the input
   const dyParams = useParams();
-  console.log("params",dyParams)
   const [chat_id, chat_user] = dyParams._id.split("&");
-  // console.log("line num24:",chat_id, chat_user);
   const userData = JSON.parse(localStorage.getItem("userData"));
   const [allMessages, setAllMessages] = useState([]);
-  const [allMessagesCopy,setAllMessagesCopy] = useState([])
-  
   const { refresh, setRefresh } = useContext(myContext);
-  const [loaded, setloaded] = useState(false);
-  const [socketConnectionStatus,setSocketConnectionStatus] = useState(false)
+  const [loaded, setLoaded] = useState(false);
+  const [socketConnectionStatus, setSocketConnectionStatus] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   const sendMessage = () => {
-  //  console.log("SendMessage Fired to", chat_id._id);
-    var data = null;
     const config = {
       headers: {
         Authorization: `Bearer ${userData.data.token}`,
@@ -46,52 +45,69 @@ function ChatArea() {
         },
         config
       )
-      .then(({ response}) => {
-         data = response;
-        console.log("Message Fired",response);
+      .then(({ response }) => {
+        console.log("Message Fired", response);
       });
-      socket.emit("newMessage",data)
+    setMessageContent("");
+    setIsTyping(false); // Reset typing state after sending message
+    setRefresh(!refresh);
   };
-  
-  //connect to socket
-  useEffect(()=>{
-    socket = io(ENDPOINT);
-    socket.emit("setup",userData);
-    socket.on("connection",()=>{
-      setSocketConnectionStatus(!socketConnectionStatus);
-    });
-  },[]);
 
-  //new message recieved
-  useEffect(()=>{
-    socket.on("message recieved",(newMessage) =>{
-      if(!allMessagesCopy || allMessagesCopy._id !== newMessage._id){
-         console.log("not recieved")
-      }else {
-        setAllMessages([...allMessages],newMessage)
-      }
-    })
-  });
-
-//fetch data
-  useEffect(() => {
-    // console.log("Users refreshed");
+  const clearMessages = () => {
     const config = {
       headers: {
         Authorization: `Bearer ${userData.data.token}`,
       },
     };
     axios
-    .get("http://localhost:9000/message/" + chat_id, config)
+      .delete(`http://localhost:9000/message/${chat_id}`, config)
+      .then(() => {
+        setAllMessages([]);
+      })
+      .catch((error) => {
+        console.error("Error clearing messages: ", error);
+      });
+  };
+
+  // Connect to socket
+  useEffect(() => {
+    socket = io(ENDPOINT);
+    socket.emit("setup", userData);
+    socket.on("connected", () => {
+      setSocketConnectionStatus(true);
+    });
+  }, [userData]);
+
+  // New message received
+  useEffect(() => {
+    socket.on("message received", (newMessage) => {
+      if (!allMessages || allMessages._id !== newMessage._id) {
+        setAllMessages((prevMessages) => [...prevMessages, newMessage]);
+        scrollToBottom();
+      }
+    });
+  }, [allMessages]);
+
+  // Fetch data
+  useEffect(() => {
+    const config = {
+      headers: {
+        Authorization: `Bearer ${userData.data.token}`,
+      },
+    };
+    axios
+      .get(`http://localhost:9000/message/${chat_id}`, config)
       .then(({ data }) => {
         setAllMessages(data);
-        setloaded(true);
-        socket.emit("join chat",chat_id);
-        //  console.log("Data from Acess Chat API ", data);
+        setLoaded(true);
+        socket.emit("join chat", chat_id);
+        scrollToBottom();
       });
-      setAllMessagesCopy(allMessages)
-    // scrollToBottom();
-  }, [refresh, chat_id, userData.data.token,allMessages]);
+  }, [refresh, chat_id, userData.data.token]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [allMessages]);
 
   if (!loaded) {
     return (
@@ -129,64 +145,55 @@ function ChatArea() {
     return (
       <div className="chatArea-container">
         <div className="chatArea-header">
-          <p className="con-icon">
-            {chat_user[0]}
-          </p>
+          <p className="con-icon">{chat_user[0]}</p>
           <div className="header-text">
-            <p className="con-title">
-              {chat_user}
-            </p>
+            <p className="con-title">{chat_user}</p>
           </div>
-          <IconButton className="icon">
-            <DeleteIcon />
-          </IconButton>
+          <Tooltip title="Clear">
+            <IconButton onClick={clearMessages}>
+              <DeleteIcon />
+            </IconButton>
+          </Tooltip>
         </div>
         <div className="message-container">
-          {
-          allMessages
-            .slice(0)
-            // .reverse()
-            .map((message, index) => {
-              const sender = message.sender;
-              // console.log("senderrrrrr:",sender)
-              const self_id = userData.data._id;
-              if (sender._id === self_id) {
-                  // console.log("I sent it ");
-                  // console.log("message12321:",message)
-                return <MessageSelf props={message} key={index} />;
-              } else {
-                // console.log("Someone Sent it");
-                return <MessageOthers props={message} key={index} />;
-              }
-            })}
+          {allMessages.map((message, index) => {
+            const sender = message.sender;
+            const self_id = userData.data._id;
+            return sender._id === self_id ? (
+              <MessageSelf props={message} key={index} />
+            ) : (
+              <MessageOthers props={message} key={index} />
+            );
+          })}
+          <div ref={messagesEndRef} />
         </div>
-        {/* <div ref={messagesEndRef} className="BOTTOM" /> */}
-        
-        <div className="text-input-area" >
-          <input placeholder="Type a Message"
+        <div className="text-input-area">
+          <input
+            placeholder="Type a Message"
             className="search-box"
             value={messageContent}
-            onChange={(e)=> {
-              setMessageContent(e.target.value)
+            onChange={(e) => {
+              setMessageContent(e.target.value);
+              setIsTyping(e.target.value.length > 0); // Set typing state based on input content
             }}
             onKeyDown={(event) => {
-              if (event.code == "Enter") {
-                // console.log(event);
+              if (event.key === "Enter") {
                 sendMessage();
-                setMessageContent(" ");
-                setRefresh(!refresh);
               }
             }}
           />
-          <IconButton
-            className="icon"
-            onClick={() => {
-              sendMessage();
-              setRefresh(!refresh);
-            }}
-          >
-            <SendIcon />
-          </IconButton>
+          {isTyping && (
+            <Tooltip title="Send">
+              <IconButton
+                className="icon"
+                onClick={() => {
+                  sendMessage();
+                }}
+              >
+                <SendIcon />
+              </IconButton>
+            </Tooltip>
+          )}
         </div>
       </div>
     );

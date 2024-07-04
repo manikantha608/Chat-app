@@ -54,4 +54,15 @@ const sendMessage = expressAsyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { allMessages, sendMessage };
+const deleteMessages = expressAsyncHandler(async (req, res) => {
+  try {
+    await Message.deleteMany({ chat: req.params.chatId });
+    res.status(200).json({ message: "Messages deleted successfully" });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+module.exports = { allMessages,deleteMessages, sendMessage };
+
